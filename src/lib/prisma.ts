@@ -4,7 +4,6 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-// @ts-expect-error - Prisma 7 type compatibility
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
