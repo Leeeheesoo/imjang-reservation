@@ -5,6 +5,10 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 // @ts-expect-error - Prisma 7 type compatibility
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    // SQLite datasource
+  } as any);
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
