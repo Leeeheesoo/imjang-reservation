@@ -1,0 +1,6 @@
+{
+  "env": {
+    "DATABASE_URL": "@database_url"
+  },
+  "buildCommand": "npm run build"
+}
