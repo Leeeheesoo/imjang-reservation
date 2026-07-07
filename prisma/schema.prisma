@@ -1,0 +1,122 @@
+// 임장예약시스템 MVP 데이터 모델
+// M1~M5 핵심 플로우: 인증 mock, 매물 등록, 슬롯 설정, 탐색, 예약 요청/승인
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  HOST // 집을 보여주는 사람 (매도인/집주인/거주 세입자)
+  GUEST // 방문 희망자
+}
+
+enum PropertyType {
+  SALE // 매매
+  JEONSE // 전세
+  TENANT_OCCUPIED // 세입자 거주 중 (가격 비공개 가능)
+}
+
+enum PropertyStatus {
+  DRAFT // 작성중 (슬롯 미설정 등으로 미완료)
+  PENDING_REVIEW // 검수중
+  PUBLISHED // 게시중
+  HIDDEN // 숨김 (신고/자진 비공개)
+  REJECTED // 반려
+  ARCHIVED // 거래완료
+}
+
+enum ReservationStatus {
+  REQUESTED // 요청됨
+  APPROVED // 승인됨
+  REJECTED // 거절됨
+  EXPIRED // 만료됨 (24h 무응답)
+  CANCELLED // 취소됨
+  COMPLETED // 방문완료
+  NO_SHOW // 노쇼
+}
+
+// 본인인증은 MVP에서 mock: 이름 + 전화번호 입력으로 세션 생성
+model User {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String   @unique
+  verified    Boolean  @default(false) // 휴대폰 본인인증 여부 (mock)
+  role        UserRole
+  createdAt   DateTime @default(now())
+
+  properties   Property[]     @relation("HostProperties")
+  reservations Reservation[]  @relation("GuestReservations")
+}
+
+// 동탄 신도시 단지 마스터 (K-apt 연동 전까지는 수동 시드)
+model Complex {
+  id         String     @id @default(cuid())
+  name       String // 예: "동탄역 시범 우남 퍼스트빌"
+  district   String // 예: "화성시 동탄2동"
+  properties Property[]
+}
+
+model Property {
+  id          String         @id @default(cuid())
+  hostId      String
+  host        User           @relation("HostProperties", fields: [hostId], references: [id])
+  complexId   String
+  complex     Complex        @relation(fields: [complexId], references: [id])
+  dong        String // 동 (게스트에게 공개)
+  ho          String? // 호수 (예약 확정 전까지 비공개)
+  pyeong      Int // 평형
+  type        PropertyType
+  price       String? // 선택 입력 (세입자 등록 케이스는 비공개 가능)
+  photos      String // JSON 배열 문자열로 저장 (사진 URL 목록)
+  description String?
+  status      PropertyStatus @default(DRAFT)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  slots        AvailabilitySlot[]
+  reservations Reservation[]
+}
+
+// 주간 반복 슬롯 (요일 0=일 ~ 6=토) + 날짜별 예외는 exceptionDate로 표현
+model AvailabilitySlot {
+  id            String    @id @default(cuid())
+  propertyId    String
+  property      Property  @relation(fields: [propertyId], references: [id])
+  dayOfWeek     Int? // 0-6, 반복 슬롯일 때 사용
+  startTime     String // "14:00" (30분 단위)
+  endTime       String // "14:30"
+  exceptionDate DateTime? // 특정 날짜만 닫거나(비활성) 여는 예외 슬롯
+  isClosed      Boolean   @default(false) // 예외로 닫힌 슬롯 표시
+  createdAt     DateTime  @default(now())
+
+  reservations Reservation[]
+
+  @@index([propertyId])
+}
+
+model Reservation {
+  id            String            @id @default(cuid())
+  propertyId    String
+  property      Property          @relation(fields: [propertyId], references: [id])
+  slotId        String
+  slot          AvailabilitySlot  @relation(fields: [slotId], references: [id])
+  guestId       String
+  guest         User              @relation("GuestReservations", fields: [guestId], references: [id])
+  visitDate     DateTime // 실제 방문 날짜 (슬롯의 요일/시간 + 선택된 날짜)
+  partySize     Int               @default(1)
+  status        ReservationStatus @default(REQUESTED)
+  requestedAt   DateTime          @default(now())
+  respondedAt   DateTime?
+  expiresAt     DateTime // requestedAt + 24h
+  cancelledBy   String? // "HOST" | "GUEST"
+  noShowMarkedBy String?
+
+  @@index([propertyId, visitDate])
+  @@index([slotId, visitDate])
+}
